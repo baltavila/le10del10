@@ -1,0 +1,62 @@
+# Flutter & Dart
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+android/.gradle/
+android/app/build/
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
+ios/Flutter/Generated.xcconfig
+ios/Flutter/.last_build_id
+macos/Pods/
+macos/Flutter/ephemeral/
+windows/flutter/ephemeral/
+linux/flutter/ephemeral/
+web/.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Node.js backend (server)
+server/node_modules/
+server/.env
+server/.env.*
+server/npm-debug.log*
+server/yarn-debug.log*
+server/yarn-error.log*
+
+# Logs
+*.log
+
+# Editor / IDE
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Environment / secrets
+.env
+.env.*
+*.keystore
+*.jks
+*.p12
+
+# OS-generated
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+._*
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*.orig
+*.bak
+*.rej

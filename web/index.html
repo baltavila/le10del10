@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="description" content="Le 10 del 10 - App musical de Baltazar Ávila" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Le 10 del 10</title>
+    <link rel="icon" type="image/png" href="icons/Icon-192.png" />
+    <script src="flutter.js" defer></script>
+  </head>
+
+  <body style="background-color:black;margin:0;overflow:hidden;">
+    <script type="application/javascript">
+      window.addEventListener("load", async function () {
+        const loader = _flutter.loader;
+        // 🔥 Nueva forma obligatoria desde Flutter 3.35
+        _flutter.buildConfig = { renderer: "html" };
+
+        const engineInitializer = await loader.loadEntrypoint({
+          serviceWorker: { serviceWorkerVersion: null },
+        });
+        const appRunner = await engineInitializer.initializeEngine();
+        await appRunner.runApp();
+      });
+    </script>
+  </body>
+</html>
