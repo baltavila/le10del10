@@ -117,7 +117,9 @@ app.post('/webhook', rawParser, async (req, res) => {
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
-    const uid = session.metadata.uid;
+    const uid = session.metadata?.uid;
+    const priceId = session.metadata?.priceId;
+    const productId = session.metadata?.productId;
 
     if (!uid) {
       console.warn(
@@ -125,14 +127,15 @@ app.post('/webhook', rawParser, async (req, res) => {
       );
     } else {
       try {
-        await firestore.collection('payments').doc(uid).set(
+        await admin.firestore().collection('payments').doc(uid).set(
           {
             status: 'paid',
             amount: session.amount_total,
             currency: session.currency,
-            priceId: session.metadata.priceId,
-            productId: session.metadata.productId,
-            premium: true,
+            priceId,
+            productId,
+            checkoutSessionId: session.id,
+            paymentIntentId: session.payment_intent,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
           { merge: true },
@@ -147,6 +150,7 @@ app.post('/webhook', rawParser, async (req, res) => {
         );
       } catch (firestoreError) {
         console.error('Failed to write payment document', firestoreError);
+        return res.status(500).json({ error: 'Firestore write failed' });
       }
     }
   }
