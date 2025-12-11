@@ -5,10 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 /// Handles all communications with the payment backend + Stripe Checkout.
 class PaymentService {
-  static const String _backendBaseUrl = String.fromEnvironment(
-    'PAYMENT_BACKEND_URL',
-    defaultValue: 'http://localhost:3000',
-  );
+  static const String _backendBaseUrl = 'https://le10del10.onrender.com';
 
   static const String priceId = 'price_1SUPoC0gHm7588JBwmURM2tn';
 

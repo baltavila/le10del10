@@ -3,12 +3,10 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'login_page.dart';
 import 'main.dart';
 import 'screens/payment_required_page.dart';
-import 'screens/payment_success_page.dart';
 
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
@@ -35,7 +33,7 @@ class AuthGate extends StatelessWidget {
   }
 }
 
-enum _PaymentState { loading, unpaid, awaitingConfirmation, paid, error }
+enum _PaymentState { loading, unpaid, paid, error }
 
 class PaymentAccessGate extends StatefulWidget {
   final User user;
@@ -47,16 +45,10 @@ class PaymentAccessGate extends StatefulWidget {
 }
 
 class _PaymentAccessGateState extends State<PaymentAccessGate> {
-  static const int _defaultAmount = 700;
-  static const String _defaultPriceId = 'price_1SUPoC0gHm7588JBwmURM2tn';
-
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _subscription;
   _PaymentState _state = _PaymentState.loading;
-  Map<String, dynamic>? _paymentData;
-  String? _pendingSessionId;
   String? _errorMessage;
-
-  String get _prefsKey => 'payment_session_ack_${widget.user.uid}';
+  bool _navigatedToMenu = false;
 
   @override
   void initState() {
@@ -70,8 +62,7 @@ class _PaymentAccessGateState extends State<PaymentAccessGate> {
     if (oldWidget.user.uid != widget.user.uid) {
       _subscription?.cancel();
       _state = _PaymentState.loading;
-      _paymentData = null;
-      _pendingSessionId = null;
+      _navigatedToMenu = false;
       _subscribeToPayments();
     }
   }
@@ -106,64 +97,41 @@ class _PaymentAccessGateState extends State<PaymentAccessGate> {
     if (!doc.exists || doc.data() == null) {
       setState(() {
         _state = _PaymentState.unpaid;
-        _paymentData = null;
-        _pendingSessionId = null;
+        _errorMessage = null;
       });
       return;
     }
 
     final data = doc.data()!;
     final status = data['status'] as String? ?? 'unpaid';
-    _paymentData = data;
-
-    if (status != 'paid') {
+    if (status == 'paid') {
+      await _markPaymentAsPaid();
+    } else {
       setState(() {
         _state = _PaymentState.unpaid;
-        _pendingSessionId = null;
-      });
-      return;
-    }
-
-    final sessionId = (data['sessionId'] as String?) ?? '';
-    if (sessionId.isEmpty) {
-      setState(() {
-        _state = _PaymentState.paid;
-        _pendingSessionId = null;
-      });
-      return;
-    }
-
-    final prefs = await SharedPreferences.getInstance();
-    final acknowledgedSession = prefs.getString(_prefsKey);
-
-    if (acknowledgedSession == sessionId) {
-      if (!mounted) return;
-      setState(() {
-        _state = _PaymentState.paid;
-        _pendingSessionId = sessionId;
-      });
-    } else {
-      if (!mounted) return;
-      setState(() {
-        _state = _PaymentState.awaitingConfirmation;
-        _pendingSessionId = sessionId;
+        _errorMessage = null;
       });
     }
   }
 
-  Future<void> _markPaymentAsViewed() async {
-    final sessionId = _pendingSessionId;
-    if (sessionId != null && sessionId.isNotEmpty) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_prefsKey, sessionId);
-    }
-
-    if (!mounted) return;
+  Future<void> _markPaymentAsPaid() async {
+    if (!mounted || _navigatedToMenu) return;
     setState(() {
       _state = _PaymentState.paid;
     });
 
-    if (!mounted) return;
+    // Compatibilidad: opcionalmente marcar premium en users/{uid}
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.user.uid)
+          .set({'premium': true}, SetOptions(merge: true));
+    } catch (e, st) {
+      debugPrint('No se pudo marcar premium en users: $e\n$st');
+    }
+
+    if (!mounted || _navigatedToMenu) return;
+    _navigatedToMenu = true;
     Navigator.pushNamedAndRemoveUntil(context, '/menu', (route) => false);
   }
 
@@ -176,16 +144,6 @@ class _PaymentAccessGateState extends State<PaymentAccessGate> {
         );
       case _PaymentState.unpaid:
         return PaymentRequiredPage(user: widget.user);
-      case _PaymentState.awaitingConfirmation:
-        final amount =
-            (_paymentData?['amount'] as num?)?.toInt() ?? _defaultAmount;
-        final priceId =
-            (_paymentData?['priceId'] as String?) ?? _defaultPriceId;
-        return PaymentSuccessPage(
-          amount: amount,
-          priceId: priceId,
-          onEnter: _markPaymentAsViewed,
-        );
       case _PaymentState.paid:
         return const MenuScreen();
       case _PaymentState.error:

@@ -117,27 +117,34 @@ app.post('/webhook', rawParser, async (req, res) => {
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
-    const uid = session.metadata?.uid;
+    const uid = session.metadata.uid;
 
     if (!uid) {
       console.warn(
         'checkout.session.completed event received without uid metadata.',
       );
     } else {
-      const paymentData = {
-        uid,
-        amount: session.amount_total ?? session.amount_subtotal ?? 700,
-        priceId: session.metadata?.priceId ?? PRICE_ID,
-        productId: session.metadata?.productId ?? PRODUCT_ID,
-        sessionId: session.id,
-        status: 'paid',
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      };
-
       try {
-        await firestore.collection('payments').doc(uid).set(paymentData, {
-          merge: true,
-        });
+        await firestore.collection('payments').doc(uid).set(
+          {
+            status: 'paid',
+            amount: session.amount_total,
+            currency: session.currency,
+            priceId: session.metadata.priceId,
+            productId: session.metadata.productId,
+            premium: true,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+
+        await firestore.collection('users').doc(uid).set(
+          {
+            premium: true,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
       } catch (firestoreError) {
         console.error('Failed to write payment document', firestoreError);
       }

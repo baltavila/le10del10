@@ -3,7 +3,6 @@ import 'dart:ui';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
-import 'services/email_password_auth.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -16,7 +15,6 @@ class _LoginPageState extends State<LoginPage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
-  final EmailPasswordAuth _emailAuth = EmailPasswordAuth();
   bool _loadingEmail = false;
 
   void _showMessage(String message) {
@@ -195,31 +193,56 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _onContinueWithEmailPressed() async {
-    final email = emailController.text;
-    final password = passwordController.text;
+    final email = emailController.text.trim();
+    final password = passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      _showMessage('Completa email y contrasena');
+      return;
+    }
 
     setState(() => _loadingEmail = true);
+    var success = false;
 
     try {
-      final cred = await _emailAuth.continueWithEmail(
+      await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
-
-      final isNew = cred.additionalUserInfo?.isNewUser ?? false;
-
-      if (isNew) {
-        _showSnack('Cuenta creada. Te enviamos un mail de verificacion.');
+      success = true;
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'user-not-found') {
+        try {
+          await _auth.createUserWithEmailAndPassword(
+            email: email,
+            password: password,
+          );
+          success = true;
+        } on FirebaseAuthException catch (createError) {
+          debugPrint('Error registrando usuario: $createError');
+          _showMessage('Ocurrio un error, proba nuevamente.');
+        } catch (e, st) {
+          debugPrint('Error desconocido al registrar: $e\n$st');
+          _showMessage('Ocurrio un error, proba nuevamente.');
+        }
+      } else if (e.code == 'wrong-password') {
+        _showMessage('Contrasena incorrecta.');
       } else {
-        _showSnack('Bienvenido de nuevo.');
+        debugPrint('Error al iniciar sesion: $e');
+        _showMessage('Ocurrio un error, proba nuevamente.');
       }
-
-      // La navegacion la maneja AuthGate escuchando authStateChanges(),
-      // no hagas nada mas aca salvo que ya tengas logica existente.
-    } catch (e) {
-      _showSnack(e.toString().replaceFirst('Exception: ', ''));
+    } catch (e, st) {
+      debugPrint('Error inesperado en login: $e\n$st');
+      _showMessage('Ocurrio un error, proba nuevamente.');
     } finally {
       setState(() => _loadingEmail = false);
+    }
+
+    // La navegacion la maneja AuthGate escuchando authStateChanges(),
+    // no hagas nada mas aca salvo que ya tengas logica existente.
+    if (success) {
+      // Si hay navegaciボn especボfica, agregala aquボ. Caso contrario,
+      // AuthGate se encarga al detectar el usuario autenticado.
     }
   }
 
