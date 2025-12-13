@@ -47,8 +47,9 @@ class _PaymentRequiredPageState extends State<PaymentRequiredPage> {
       (doc) {
         final data = doc.data();
         final status = data?['status'] as String? ?? 'unpaid';
+        final premium = data?['premium'] as bool? ?? false;
 
-        if (status == 'paid') {
+        if (status == 'paid' || premium == true) {
           _handlePaymentConfirmed();
         } else {
           if (mounted) {

@@ -12,10 +12,39 @@ if (!stripeSecret) {
 
 const stripe = Stripe(stripeSecret);
 if (!admin.apps.length) {
-  admin.initializeApp();
+  console.log(
+    'has FIREBASE_SERVICE_ACCOUNT_JSON:',
+    Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON),
+  );
+  console.log(
+    'FIREBASE_SERVICE_ACCOUNT_JSON length:',
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+      ? process.env.FIREBASE_SERVICE_ACCOUNT_JSON.length
+      : 0,
+  );
+  console.log(
+    'GCLOUD_PROJECT:',
+    process.env.GCLOUD_PROJECT ||
+      process.env.GOOGLE_CLOUD_PROJECT ||
+      'missing',
+  );
+
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  } catch (err) {
+    console.error('Service account JSON parse error:', err.message);
+    throw err;
+  }
+
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    projectId: serviceAccount.project_id,
+  });
 }
 
 const firestore = admin.firestore();
+console.log("Firebase project:", admin.app().options.projectId);
 const app = express();
 app.use(cors({ origin: true }));
 

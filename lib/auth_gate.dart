@@ -104,7 +104,9 @@ class _PaymentAccessGateState extends State<PaymentAccessGate> {
 
     final data = doc.data()!;
     final status = data['status'] as String? ?? 'unpaid';
-    if (status == 'paid') {
+    final premium = data['premium'] as bool? ?? false;
+
+    if (status == 'paid' || premium == true) {
       await _markPaymentAsPaid();
     } else {
       setState(() {
