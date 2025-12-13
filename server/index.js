@@ -85,6 +85,19 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/debug/firestore', async (_req, res) => {
+  try {
+    await firestore.collection('debug').doc('ping').set({
+      ok: true,
+      at: Date.now(),
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Debug firestore write failed', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 app.post('/create-checkout-session', jsonParser, async (req, res) => {
   const { uid, priceId } = req.body || {};
 
