@@ -121,7 +121,7 @@ app.post('/create-checkout-session', jsonParser, async (req, res) => {
       cancel_url: CANCEL_URL,
       client_reference_id: uid,
       metadata: {
-        uid,
+        uid: uid,
         priceId: selectedPrice,
         productId: PRODUCT_ID,
       },
@@ -160,11 +160,9 @@ app.post('/webhook', rawParser, async (req, res) => {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
     const uid = session.metadata?.uid;
-    const priceId = session.metadata?.priceId;
-    const productId = session.metadata?.productId;
 
     if (!uid) {
-      console.warn(
+      console.error(
         'checkout.session.completed event received without uid metadata.',
       );
     } else {
@@ -172,16 +170,12 @@ app.post('/webhook', rawParser, async (req, res) => {
         await admin.firestore().collection('payments').doc(uid).set(
           {
             status: 'paid',
-            amount: session.amount_total,
-            currency: session.currency,
-            priceId,
-            productId,
-            checkoutSessionId: session.id,
-            paymentIntentId: session.payment_intent,
+            stripeSessionId: session.id,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
           { merge: true },
         );
+        console.log('Payment marked as paid for uid:', uid);
 
         await firestore.collection('users').doc(uid).set(
           {
