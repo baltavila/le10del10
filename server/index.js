@@ -233,10 +233,12 @@ app.post('/mp/webhook', async (req, res) => {
       paymentData?.external_reference || paymentData?.metadata?.uid;
 
     if (status === 'approved' && uid) {
-      await firestore.collection('users').doc(uid).set(
+      await firestore.collection('payments').doc(uid).set(
         {
-          isPaid: true,
+          status: 'paid',
+          premium: true,
           paidAt: admin.firestore.FieldValue.serverTimestamp(),
+          provider: 'mercadopago',
           mpPaymentId: paymentId,
         },
         { merge: true },
