@@ -195,6 +195,7 @@ app.post('/mp/create-preference', async (req, res) => {
           pending: MP_PENDING_URL,
         },
         auto_return: 'approved',
+        notification_url: 'https://le10del10.onrender.com/mp/webhook',
       },
     });
 
