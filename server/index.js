@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const Stripe = require('stripe');
-const { MercadoPagoConfig, Preference } = require('mercadopago');
+const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
 const admin = require('firebase-admin');
 const bodyParser = require('body-parser');
 require('dotenv').config();
@@ -20,6 +20,7 @@ const mpClient = new MercadoPagoConfig({
   accessToken: mpAccessToken,
 });
 const mpPreference = new Preference(mpClient);
+const mpPayment = new Payment(mpClient);
 
 let firestore;
 const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
@@ -208,6 +209,57 @@ app.post('/mp/create-preference', async (req, res) => {
       error: 'Unable to create Mercado Pago preference.',
     });
   }
+});
+
+app.post('/mp/webhook', async (req, res) => {
+  if (!firestore) {
+    return res
+      .status(503)
+      .json({ error: 'Firebase is disabled; Firestore not available.' });
+  }
+
+  const paymentId = req.body?.data?.id || req.body?.id;
+
+  if (!paymentId) {
+    console.log('MP webhook received without payment id');
+    return res.status(200).json({ received: true });
+  }
+
+  try {
+    const paymentResponse = await mpPayment.get({ id: paymentId });
+    const paymentData = paymentResponse?.body || paymentResponse;
+    const status = paymentData?.status;
+    const uid =
+      paymentData?.external_reference || paymentData?.metadata?.uid;
+
+    if (status === 'approved' && uid) {
+      await firestore.collection('users').doc(uid).set(
+        {
+          isPaid: true,
+          paidAt: admin.firestore.FieldValue.serverTimestamp(),
+          mpPaymentId: paymentId,
+        },
+        { merge: true },
+      );
+      console.log('MP payment approved and recorded', {
+        paymentId,
+        uid,
+      });
+    } else {
+      console.log('MP payment not recorded', {
+        paymentId,
+        status,
+        hasUid: Boolean(uid),
+      });
+    }
+  } catch (error) {
+    console.error('Error handling MP webhook', {
+      paymentId,
+      message: error.message,
+    });
+  }
+
+  return res.status(200).json({ received: true });
 });
 
 app.post('/webhook', rawParser, async (req, res) => {
