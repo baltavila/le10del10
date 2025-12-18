@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const Stripe = require('stripe');
+const { MercadoPagoConfig, Preference } = require('mercadopago');
 const admin = require('firebase-admin');
 const bodyParser = require('body-parser');
 require('dotenv').config();
@@ -11,42 +12,53 @@ if (!stripeSecret) {
 }
 
 const stripe = Stripe(stripeSecret);
-if (!admin.apps.length) {
-  console.log(
-    'has FIREBASE_SERVICE_ACCOUNT_JSON:',
-    Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON),
-  );
-  console.log(
-    'FIREBASE_SERVICE_ACCOUNT_JSON length:',
-    process.env.FIREBASE_SERVICE_ACCOUNT_JSON
-      ? process.env.FIREBASE_SERVICE_ACCOUNT_JSON.length
-      : 0,
-  );
-  console.log(
-    'GCLOUD_PROJECT:',
-    process.env.GCLOUD_PROJECT ||
-      process.env.GOOGLE_CLOUD_PROJECT ||
-      'missing',
-  );
-
-  let serviceAccount;
-  try {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
-  } catch (err) {
-    console.error('Service account JSON parse error:', err.message);
-    throw err;
-  }
-
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    projectId: serviceAccount.project_id,
-  });
+const mpAccessToken = process.env.MP_ACCESS_TOKEN;
+if (!mpAccessToken) {
+  throw new Error('Missing MP_ACCESS_TOKEN in environment configuration.');
 }
+const mpClient = new MercadoPagoConfig({
+  accessToken: mpAccessToken,
+});
+const mpPreference = new Preference(mpClient);
 
-const firestore = admin.firestore();
-console.log("Firebase project:", admin.app().options.projectId);
+let firestore;
+const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+const hasServiceAccount =
+  typeof serviceAccountJson === 'string' && serviceAccountJson.trim().length > 0;
+
+if (!admin.apps.length) {
+  if (hasServiceAccount) {
+    console.log('has FIREBASE_SERVICE_ACCOUNT_JSON:', true);
+    console.log('FIREBASE_SERVICE_ACCOUNT_JSON length:', serviceAccountJson.length);
+    console.log(
+      'GCLOUD_PROJECT:',
+      process.env.GCLOUD_PROJECT ||
+        process.env.GOOGLE_CLOUD_PROJECT ||
+        'missing',
+    );
+
+    let serviceAccount;
+    try {
+      serviceAccount = JSON.parse(serviceAccountJson);
+    } catch (err) {
+      console.error('Service account JSON parse error:', err.message);
+      throw err;
+    }
+
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      projectId: serviceAccount.project_id,
+    });
+    firestore = admin.firestore();
+    console.log('Firebase project:', admin.app().options.projectId);
+  } else {
+    console.log('Firebase disabled locally');
+  }
+} else {
+  firestore = admin.firestore();
+  console.log('Firebase project:', admin.app().options.projectId);
+}
 const app = express();
-app.use(cors({ origin: true }));
 
 const PRICE_ID =
   process.env.STRIPE_PRICE_ID || 'price_1SUPoC0gHm7588JBwmURM2tn';
@@ -58,9 +70,20 @@ const SUCCESS_URL =
 const CANCEL_URL =
   process.env.CANCEL_URL || 'https://example.com/checkout-cancel';
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
+const MP_SUCCESS_URL = 'https://example.com/success';
+const MP_FAILURE_URL = 'https://example.com/failure';
+const MP_PENDING_URL = 'https://example.com/pending';
 
 const jsonParser = express.json();
 const rawParser = bodyParser.raw({ type: 'application/json' });
+
+app.use((req, res, next) => {
+  if (req.originalUrl === '/webhook') {
+    return next();
+  }
+  return jsonParser(req, res, next);
+});
+app.use(cors({ origin: true }));
 
 const appendReturnToApp = (targetUrl) => {
   if (targetUrl.includes('return_to_app')) {
@@ -86,6 +109,12 @@ app.get('/health', (_req, res) => {
 });
 
 app.get('/debug/firestore', async (_req, res) => {
+  if (!firestore) {
+    return res
+      .status(503)
+      .json({ error: 'Firebase is disabled; Firestore not available.' });
+  }
+
   try {
     await firestore.collection('debug').doc('ping').set({
       ok: true,
@@ -136,11 +165,62 @@ app.post('/create-checkout-session', jsonParser, async (req, res) => {
   }
 });
 
+app.post('/mp/create-preference', async (req, res) => {
+  const { uid, email } = req.body || {};
+
+  if (!uid || !email) {
+    return res
+      .status(400)
+      .json({ error: 'Missing uid or email in request body.' });
+  }
+
+  try {
+    const preferenceResponse = await mpPreference.create({
+      body: {
+        items: [
+          {
+            title: 'Acceso App-Album Le 10 del 10',
+            quantity: 1,
+            unit_price: 10000,
+            currency_id: 'ARS',
+          },
+        ],
+        external_reference: uid,
+        metadata: { uid, email },
+        payer: { email },
+        back_urls: {
+          success: MP_SUCCESS_URL,
+          failure: MP_FAILURE_URL,
+          pending: MP_PENDING_URL,
+        },
+        auto_return: 'approved',
+      },
+    });
+
+    return res.json({
+      init_point: preferenceResponse?.init_point,
+      sandbox_init_point: preferenceResponse?.sandbox_init_point,
+      preference_id: preferenceResponse?.id,
+    });
+  } catch (error) {
+    console.error('Error creating Mercado Pago preference', error);
+    return res.status(500).json({
+      error: 'Unable to create Mercado Pago preference.',
+    });
+  }
+});
+
 app.post('/webhook', rawParser, async (req, res) => {
   if (!webhookSecret) {
     return res
       .status(500)
       .send('Webhook secret is not configured on the server.');
+  }
+
+  if (!firestore) {
+    return res
+      .status(503)
+      .send('Firebase is disabled; Firestore not available.');
   }
 
   const signature = req.headers['stripe-signature'];
@@ -167,7 +247,7 @@ app.post('/webhook', rawParser, async (req, res) => {
       );
     } else {
       try {
-        await admin.firestore().collection('payments').doc(uid).set(
+        await firestore.collection('payments').doc(uid).set(
           {
             status: 'paid',
             stripeSessionId: session.id,
